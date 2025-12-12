@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt",
 
     "apps.accounts",
+    "apps.rbac",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -121,7 +122,7 @@ REST_FRAMEWORK = {
 
 ACCESS_TOKEN_LIFETIME_MINUTES = env.int(
     "ACCESS_TOKEN_LIFETIME_MINUTES",
-    default=60,
+    default=1440,  # 1 day
 )
 REFRESH_TOKEN_LIFETIME_DAYS = env.int(
     "REFRESH_TOKEN_LIFETIME_DAYS",
