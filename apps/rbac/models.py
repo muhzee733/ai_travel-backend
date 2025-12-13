@@ -26,14 +26,16 @@ class PageRegistry(SoftDeleteModel):
 
 class Menu(SoftDeleteModel):
     name = models.CharField(max_length=150)
-    location = models.CharField(max_length=150, unique=True)
+    slug = models.SlugField(unique=True)
+    location = models.CharField(max_length=150, blank=True, null=True)
     is_active = models.BooleanField(default=True, db_index=True)
 
     class Meta:
-        ordering = ("location",)
+        ordering = ("name",)
 
     def __str__(self):
         return self.location
+
 
 class Permission(SoftDeleteModel):
     code = models.CharField(max_length=150, unique=True)
@@ -124,22 +126,27 @@ class RolePermission(SoftDeleteModel):
 
 class MenuItem(SoftDeleteModel):
     menu = models.ForeignKey(Menu, on_delete=models.CASCADE, related_name="items")
-    page_registry = models.ForeignKey(
-        PageRegistry, on_delete=models.SET_NULL, null=True, blank=True, related_name="menu_items"
-    )
-    custom_label = models.CharField(max_length=200, blank=True, null=True)
-    custom_path = models.CharField(max_length=255, blank=True, null=True)
+    parent = models.ForeignKey("self", on_delete=models.CASCADE, null=True, blank=True, related_name="children")
+    key = models.CharField(max_length=150, blank=True, null=True)
+    label = models.CharField(max_length=200)
+
+    class LinkTypes(models.TextChoices):
+        INTERNAL = "INTERNAL", "Internal"
+        EXTERNAL = "EXTERNAL", "External"
+
+    link_type = models.CharField(max_length=20, choices=LinkTypes.choices, default=LinkTypes.INTERNAL)
+    path = models.CharField(max_length=255, blank=True, null=True)
+    url = models.URLField(blank=True, null=True)
     icon = models.CharField(max_length=100, blank=True, null=True)
     permission = models.JSONField(null=True, blank=True)
-    parent = models.ForeignKey(
-        "self", on_delete=models.CASCADE, null=True, blank=True, related_name="children"
-    )
     sort_order = models.PositiveIntegerField(default=1, db_index=True)
     is_active = models.BooleanField(default=True, db_index=True)
 
     class Meta:
         ordering = ("sort_order", "id")
+        indexes = [
+            models.Index(fields=["menu", "parent", "sort_order"]),
+        ]
 
     def __str__(self):
-        base = self.custom_label or (self.page_registry.title if self.page_registry else "item")
-        return f"{base} ({self.menu.location})"
+        return f"{self.label} ({self.menu.slug})"

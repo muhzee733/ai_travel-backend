@@ -6,6 +6,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from .models import User
+from apps.rbac.models import Role, UserRole
 
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -77,6 +78,14 @@ class RegisterSerializer(serializers.ModelSerializer):
         )
         user.set_password(password)
         user.save()
+
+        # Attach default customer role in RBAC
+        try:
+            customer_role = Role.objects.get(slug="customer")
+            UserRole.objects.get_or_create(user=user, role=customer_role, defaults={"assigned_by": None})
+        except Role.DoesNotExist:
+            # Safe fallback if seed hasn't run yet
+            pass
         return user
 
 

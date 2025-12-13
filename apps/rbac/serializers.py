@@ -87,25 +87,36 @@ class MenuItemSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "menu",
-            "page_registry",
-            "custom_label",
-            "custom_path",
+            "parent",
+            "key",
+            "label",
+            "link_type",
+            "path",
+            "url",
             "icon",
             "permission",
             "sort_order",
             "is_active",
             "created_at",
             "updated_at",
-            "parent",
         ]
 
     def validate(self, attrs):
-        custom_path = attrs.get("custom_path") or None
-        page_registry = attrs.get("page_registry") or None
-        if not page_registry and not custom_path:
-            raise serializers.ValidationError("Provide a page_registry or a custom_path.")
-        if custom_path and not custom_path.startswith("/"):
-            raise serializers.ValidationError({"custom_path": "Path must start with '/'."})
+        link_type = attrs.get("link_type", MenuItem.LinkTypes.INTERNAL)
+        path = attrs.get("path")
+        url = attrs.get("url")
+        parent = attrs.get("parent")
+
+        if link_type == MenuItem.LinkTypes.INTERNAL:
+            if not path or not path.startswith("/"):
+                raise serializers.ValidationError({"path": "Internal links must start with '/'."})
+            attrs["url"] = None
+        else:
+            if not url:
+                raise serializers.ValidationError({"url": "External links require a URL."})
+            attrs["path"] = None
+
+        # permission validation
         perm = attrs.get("permission")
         if perm is not None and not isinstance(perm, (str, list, tuple)):
             raise serializers.ValidationError({"permission": "Permission must be null, string, or array."})
@@ -113,6 +124,9 @@ class MenuItemSerializer(serializers.ModelSerializer):
             for p in perm:
                 if not isinstance(p, str):
                     raise serializers.ValidationError({"permission": "Permission array must contain strings."})
+
+        if parent and parent.parent:
+            raise serializers.ValidationError({"parent": "Only two levels are allowed (parent + child)."})
         return attrs
 
 
@@ -147,4 +161,4 @@ class PageRegistrySerializer(serializers.ModelSerializer):
 class MenuSerializer(serializers.ModelSerializer):
     class Meta:
         model = Menu
-        fields = ["id", "name", "location", "is_active"]
+        fields = ["id", "name", "slug", "location", "is_active", "created_at", "updated_at"]

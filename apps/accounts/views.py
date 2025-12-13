@@ -2,8 +2,12 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 from rest_framework.permissions import IsAuthenticated
-from rest_framework import status
+from rest_framework import status, generics, filters
+from rest_framework.pagination import PageNumberPagination
+from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
+
+from .models import User
 
 from .serializers import (
     RegisterSerializer,
@@ -12,6 +16,18 @@ from .serializers import (
     MeSerializer,
     ChangePasswordSerializer,
 )
+
+
+class CustomerPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = "page_size"
+    max_page_size = 100
+
+
+class CustomerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ["id", "first_name", "last_name", "email"]
 
 
 class RegisterView(APIView):
@@ -121,3 +137,19 @@ class LoginView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class CustomerListView(generics.ListAPIView):
+    """
+    Return customers (all users) with basic pagination and search by name/email.
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = CustomerSerializer
+    pagination_class = CustomerPagination
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["first_name", "last_name", "email"]
+    ordering_fields = ["first_name", "last_name", "email", "id"]
+    ordering = ["first_name"]
+
+    def get_queryset(self):
+        return User.objects.all().order_by("first_name", "id")

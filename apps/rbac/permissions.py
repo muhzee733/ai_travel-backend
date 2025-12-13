@@ -21,18 +21,22 @@ class IsRBACAdmin(BasePermission):
     """
 
     def has_permission(self, request, view):
-        user = request.user
-        return bool(user and user.is_authenticated and user.has_perm_code("rbac.manage_roles"))
+        return False  # roles/permissions disabled
 
 
 class IsMenuAdmin(BasePermission):
     """
-    Allows users with settings.manage OR rbac.manage_roles.
+    Allows superusers or users with the admin role.
     """
 
     def has_permission(self, request, view):
-        user = request.user
-        if not user or not user.is_authenticated:
-            return False
-        perms = user.get_permission_codes()
-        return "settings.manage" in perms or "rbac.manage_roles" in perms
+        return False  # menu admin disabled
+
+
+class AdminCanManageMenu(BasePermission):
+    """
+    Allows users who can manage settings or roles.
+    """
+
+    def has_permission(self, request, view):
+        return False  # disabled
