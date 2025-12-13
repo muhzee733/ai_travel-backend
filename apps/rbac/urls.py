@@ -1,7 +1,12 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from .views import DashboardConfigView, PermissionViewSet, RoleViewSet, UserRoleViewSet
+from .views import (
+    DashboardConfigView,
+    PermissionViewSet,
+    RoleViewSet,
+    UserRoleViewSet,
+)
 
 router = DefaultRouter()
 router.register(r"permissions", PermissionViewSet, basename="rbac-permissions")

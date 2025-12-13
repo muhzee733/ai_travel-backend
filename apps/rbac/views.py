@@ -1,5 +1,5 @@
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from django.db.models import Q
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
@@ -19,15 +19,27 @@ from .serializers import (
 User = get_user_model()
 
 MENU_REGISTRY = [
-    {"key": "dashboard", "label": "Dashboard", "path": "/dashboard", "permission": None},
-    {"key": "settings", "label": "Settings", "path": "/settings", "permission": ["settings.view", "settings.manage"]},
-    {"key": "reports", "label": "Reports", "path": "/reports", "permission": "reports.view"},
-    {"key": "hotels", "label": "Hotels", "path": "/hotels", "permission": "hotels.view"},
-    {"key": "cars", "label": "Cars", "path": "/cars", "permission": "cars.view"},
-    {"key": "packages", "label": "Packages", "path": "/packages", "permission": "packages.view"},
-    {"key": "earning", "label": "Earning", "path": "/earning", "permission": "earning.view"},
-    {"key": "airtickets", "label": "AirTickets", "path": "/airtickets", "permission": "airtickets.view"},
-    {"key": "visa", "label": "Visa", "path": "/visa", "permission": "visa.view"},
+    {"key": "dashboard", "label": "Dashboard", "path": "/dashboard", "permission": None, "icon": "Home"},
+    {"key": "settings", "label": "Settings", "path": "/settings", "permission": ["settings.view", "settings.manage"], "icon": "Settings"},
+    {
+        "key": "rbac",
+        "label": "RBAC",
+        "path": "/rbac",
+        "permission": "rbac.manage_roles",
+        "icon": "Shield",
+        "children": [
+            {"key": "roles", "label": "Roles", "path": "/roles", "permission": "rbac.manage_roles", "icon": "ShieldCheck"},
+            {"key": "permissions", "label": "Permissions", "path": "/permissions", "permission": "rbac.view_permissions", "icon": "ShieldQuestion"},
+            {"key": "users", "label": "Users", "path": "/users", "permission": "rbac.manage_roles", "icon": "Users"},
+        ],
+    },
+    {"key": "reports", "label": "Reports", "path": "/reports", "permission": "reports.view", "icon": "BarChart3"},
+    {"key": "hotels", "label": "Hotels", "path": "/hotels", "permission": "hotels.view", "icon": "Building2"},
+    {"key": "cars", "label": "Cars", "path": "/cars", "permission": "cars.view", "icon": "Car"},
+    {"key": "packages", "label": "Packages", "path": "/packages", "permission": "packages.view", "icon": "Package"},
+    {"key": "earning", "label": "Earning", "path": "/earning", "permission": "earning.view", "icon": "Coins"},
+    {"key": "airtickets", "label": "AirTickets", "path": "/airtickets", "permission": "airtickets.view", "icon": "Plane"},
+    {"key": "visa", "label": "Visa", "path": "/visa", "permission": "visa.view", "icon": "BadgeCheck"},
 ]
 
 WIDGET_REGISTRY = [
@@ -43,17 +55,34 @@ WIDGET_REGISTRY = [
 
 
 def _filter_items_for_permissions(items, user_permissions):
+    """
+    Filter menu/widget items by permission, preserving children lists when provided.
+    """
     filtered = []
     for item in items:
         required = item.get("permission")
+        children = item.get("children")
+
+        include_item = False
         if required is None:
-            filtered.append(item)
-            continue
-        if isinstance(required, (list, tuple, set)):
-            if any(code in user_permissions for code in required):
-                filtered.append(item)
-        elif required in user_permissions:
-            filtered.append(item)
+            include_item = True
+        elif isinstance(required, (list, tuple, set)):
+            include_item = any(code in user_permissions for code in required)
+        else:
+            include_item = required in user_permissions
+
+        filtered_children = None
+        if children:
+            filtered_children = _filter_items_for_permissions(children, user_permissions)
+            if filtered_children:
+                include_item = include_item or bool(filtered_children)
+
+        if include_item:
+            new_item = dict(item)
+            if filtered_children is not None:
+                new_item["children"] = filtered_children
+            filtered.append(new_item)
+
     return filtered
 
 
@@ -65,7 +94,8 @@ class DashboardConfigView(APIView):
         permission_codes = user.get_permission_codes()
         role_slugs = list(user.roles.values_list("slug", flat=True))
 
-        menu = _filter_items_for_permissions(MENU_REGISTRY, permission_codes)
+        menu_tree = _filter_items_for_permissions(MENU_REGISTRY, permission_codes)
+
         widgets = _filter_items_for_permissions(WIDGET_REGISTRY, permission_codes)
 
         data = {
@@ -75,7 +105,7 @@ class DashboardConfigView(APIView):
             },
             "roles": role_slugs,
             "permissions": sorted(permission_codes),
-            "menu": menu,
+            "menu_tree": menu_tree,
             "widgets": widgets,
         }
         return Response(data)
@@ -96,6 +126,33 @@ class RoleViewSet(viewsets.ModelViewSet):
         if self.action in ("create", "update", "partial_update"):
             return RoleCreateUpdateSerializer
         return RoleSerializer
+
+    def create(self, request, *args, **kwargs):
+        try:
+            return super().create(request, *args, **kwargs)
+        except IntegrityError:
+            return Response(
+                {"detail": "Role slug must be unique."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    def update(self, request, *args, **kwargs):
+        try:
+            return super().update(request, *args, **kwargs)
+        except IntegrityError:
+            return Response(
+                {"detail": "Role slug must be unique."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    def partial_update(self, request, *args, **kwargs):
+        try:
+            return super().partial_update(request, *args, **kwargs)
+        except IntegrityError:
+            return Response(
+                {"detail": "Role slug must be unique."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
     @action(detail=True, methods=["put"], url_path="permissions")
     def set_permissions(self, request, id=None):

@@ -123,3 +123,74 @@ class LoginSerializer(serializers.Serializer):
 
         attrs["user"] = user
         return attrs
+
+
+class MeSerializer(serializers.ModelSerializer):
+    roles = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "username",
+            "email",
+            "first_name",
+            "last_name",
+            "roles",
+        ]
+        read_only_fields = ["id", "username", "email"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        user = kwargs.get("instance")
+        for optional_field in ["phone", "avatar_url"]:
+            if user and hasattr(user, optional_field):
+                self.fields[optional_field] = serializers.CharField(
+                    required=False, allow_blank=True, allow_null=True
+                )
+                if optional_field not in self.Meta.fields:
+                    self.Meta.fields.append(optional_field)
+
+    def get_roles(self, obj):
+        if hasattr(obj, "roles"):
+            return list(obj.roles.values_list("slug", flat=True))
+        return []
+
+    def update(self, instance, validated_data):
+        validated_data.pop("email", None)
+        validated_data.pop("username", None)
+
+        for field in ["first_name", "last_name", "phone", "avatar_url"]:
+            if field in validated_data and hasattr(instance, field):
+                setattr(instance, field, validated_data[field])
+
+        instance.save()
+        return instance
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True)
+
+    def validate(self, attrs):
+        user = self.context["request"].user
+        current_password = attrs.get("current_password")
+        new_password = attrs.get("new_password")
+
+        if not current_password or not user.check_password(current_password):
+            raise serializers.ValidationError(
+                {"current_password": ["Incorrect password."]}
+            )
+
+        if not new_password:
+            raise serializers.ValidationError(
+                {"new_password": ["This field may not be blank."]}
+            )
+
+        try:
+            validate_password(new_password, user=user)
+        except DjangoValidationError as e:
+            raise serializers.ValidationError({"new_password": e.messages})
+
+        attrs["user"] = user
+        return attrs

@@ -1,7 +1,9 @@
 from django.contrib.auth import get_user_model
+from django.utils.text import slugify
 from rest_framework import serializers
+from rest_framework.validators import UniqueValidator
 
-from .models import Permission, Role
+from .models import Permission, Role, MenuItem, PageRegistry, Menu
 
 
 class PermissionSerializer(serializers.ModelSerializer):
@@ -38,6 +40,10 @@ class RoleSerializer(serializers.ModelSerializer):
 
 
 class RoleCreateUpdateSerializer(serializers.ModelSerializer):
+    slug = serializers.CharField(
+        validators=[UniqueValidator(queryset=Role.objects.all(), message="Slug must be unique.")],
+    )
+
     class Meta:
         model = Role
         fields = [
@@ -46,6 +52,15 @@ class RoleCreateUpdateSerializer(serializers.ModelSerializer):
             "slug",
             "description",
         ]
+
+    def validate_slug(self, value):
+        normalized = slugify(value) or value
+        qs = Role.objects.filter(slug__iexact=normalized)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("Slug must be unique.")
+        return normalized
 
 
 class UserBasicSerializer(serializers.ModelSerializer):
@@ -64,3 +79,72 @@ class UserBasicSerializer(serializers.ModelSerializer):
 
     def get_roles(self, obj):
         return list(obj.roles.values_list("slug", flat=True))
+
+
+class MenuItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MenuItem
+        fields = [
+            "id",
+            "menu",
+            "page_registry",
+            "custom_label",
+            "custom_path",
+            "icon",
+            "permission",
+            "sort_order",
+            "is_active",
+            "created_at",
+            "updated_at",
+            "parent",
+        ]
+
+    def validate(self, attrs):
+        custom_path = attrs.get("custom_path") or None
+        page_registry = attrs.get("page_registry") or None
+        if not page_registry and not custom_path:
+            raise serializers.ValidationError("Provide a page_registry or a custom_path.")
+        if custom_path and not custom_path.startswith("/"):
+            raise serializers.ValidationError({"custom_path": "Path must start with '/'."})
+        perm = attrs.get("permission")
+        if perm is not None and not isinstance(perm, (str, list, tuple)):
+            raise serializers.ValidationError({"permission": "Permission must be null, string, or array."})
+        if isinstance(perm, (list, tuple)):
+            for p in perm:
+                if not isinstance(p, str):
+                    raise serializers.ValidationError({"permission": "Permission array must contain strings."})
+        return attrs
+
+
+class MenuItemReorderSerializer(serializers.Serializer):
+    order = serializers.ListField(
+        child=serializers.DictField(child=serializers.IntegerField()),
+        allow_empty=False,
+    )
+
+    def validate_order(self, value):
+        ids = [item.get("id") for item in value]
+        if any(v is None for v in ids):
+            raise serializers.ValidationError("Each item must include an id.")
+        return value
+
+
+class PageRegistrySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PageRegistry
+        fields = [
+            "id",
+            "key",
+            "title",
+            "path",
+            "default_icon",
+            "permission",
+            "type",
+            "is_active",
+        ]
+
+
+class MenuSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Menu
+        fields = ["id", "name", "location", "is_active"]
